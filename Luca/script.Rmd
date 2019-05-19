@@ -1,0 +1,67 @@
+---
+title: "PS 7"
+author: "Luca Moretti"
+date: "17 Mai 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## 7.1
+
+
+```{r cars, message=FALSE, warning=FALSE}
+library(foreign)
+library(readstata13)
+md <- read.dta13("runandjump_sample1500g.dta")
+md$bwtcent = md$bweight-1500
+```
+
+b)
+
+```{r b, message=FALSE, warning=FALSE}
+library(ggplot2)
+ggplot(data=md)+
+  geom_histogram(aes(bwtcent),binwidth = 1, center=.5)
+```
+
+c)
+You have selection into treatment.
+
+d)
+.. sorry I ran out of time, the exam is so close Ahhhhhhhhhhhh
+
+
+## 7.2 Applications
+As we understand the paper they want to analyze the question: whether institutions shape culter or vice versa. They want to see if an institutional change (the policy) leads to a convergence in culture (measured as time between children).
+
+
+
+a)
+Treatment: cultural background * policy implementation
+We believe they want to estimate the heterogenous effect of the policy implementation on various groups of immigrants vs locals. We think that in this case culture is a collectionterm for groupfixed effects. Therefore, all observed and unobserved differences enter.
+
+b)
+The types that emmigrate may be different than the ones that stay in their country.
+
+c)
+They were thinking to difference them out and estimate a different effect of the policy on the group. The problem is that the group dummy interacted with the treatment brings back all the unobserved and observed variables. 
+We have to assume that the all other characteristics in which they differ interact with the policy. Only culture creates variation in the reaction to the policy change.
+
+d)
+If it were a proper diff-in-diff this would make me more confident that the trends after the intervention would have been parallel as well. 
+However, with regard to the assumption stated in c) this doesn't help us too much. Hence internal validity needs extremely stron assumption that in my opinion are not given e.g. if a migrant group has a lower income (probably this is the case), then lower income families cannot react stronger to the incentive set by the policy.
+
+e)
+Maybe you could control for observable interactions. But you would still have the unobservables problem mentioned in their abstract.
+
+
+
+
+
+
+```{r pressure, echo=FALSE}
+```
+
