@@ -1,0 +1,315 @@
+---
+title: "PS7"
+author: "Alex Malova (discussed with Giacomo Mangiante) "
+date: "5/12/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = FALSE, warning=FALSE, echo=FALSE}
+rm(list = ls())   # remove all objects from workspace
+library(foreign)
+library(dplyr)
+library(ggplot2)
+library(tibble)       # cuter dataframes
+library(haven)        # read dta files
+library(rddensity)    # density tests
+library(rdrobust)     # rdd estimation
+library(stargazer)    # nice tables
+library(stringr)      # to combine strings
+library(MASS)
+```
+
+```{r, echo=FALSE}
+mydata <- read.csv("/Users/alexmalova/RProj/MetrixPS7/PS7/data.csv")
+
+bwtcent <- mydata$bweight-1500
+mydata <- mutate(mydata, bwtcent)
+mydata <- arrange(mydata,bwtcent)
+
+#creating 1 gram bin frequencies
+mydata.group <- group_by(mydata, bwtcent)
+binfreq1 <- count(mydata.group, bwtcent)
+
+#creating 10 gram bin frequencies
+#bin10length <- bin1 %/% 10
+bin10 <- vector(mode = "integer", length = nrow(binfreq1) %/% 10)
+freq10 <- vector(mode = "integer", length = nrow(binfreq1) %/% 10)
+k <- 1
+for (j in 1:(nrow(binfreq1) %/% 10)) {
+  for (i in 1:10) {
+    freq10[j] <- freq10[j]+binfreq1$n[k]
+    k<-k+1
+  }
+  bin10[j] <- (binfreq1$bwtcent[k-10]+binfreq1$bwtcent[k-1])/2
+}
+binfreq10 <- tibble(bin10)
+binfreq10 <- mutate(binfreq10, freq10)
+
+#creating 25 gram bin frequencies
+#bin10length <- bin1 %/% 10
+bin25 <- vector(mode = "integer", length = nrow(binfreq1) %/% 25)
+freq25 <- vector(mode = "integer", length = nrow(binfreq1) %/% 25)
+k <- 1
+for (j in 1:(nrow(binfreq1) %/% 25)) {
+  for (i in 1:25) {
+    freq25[j] <- freq25[j]+binfreq1$n[k]
+    k<-k+1
+  }
+  bin25[j] <- (binfreq1$bwtcent[k-25]+binfreq1$bwtcent[k-1])/2
+}
+
+binfreq25 <- tibble(bin25)
+binfreq25 <- mutate(binfreq25, freq25)
+```
+
+Plotting 1gram bin histogram
+```{r, echo=FALSE}
+#plotting 1 gram bin histogram by automated graph tool
+ggplot(mydata) + 
+  geom_histogram(aes(x = bwtcent,
+                     y = ..count..),
+                 binwidth = 1, color = "grey") +
+  labs(x = "Grams",
+       y = "Frequency",
+       title = "Histogram of birth weight with 1 gram bin") +
+  theme_bw()
+```
+
+Plotting 10gram bin histogram
+```{r, echo=FALSE}
+#plotting 10 gram bin histogram manually 
+ggplot(data=binfreq10, aes(x=bin10, y=freq10))+
+  geom_bar(stat="identity")
+```
+
+Plotting 25gram bin histogram
+```{r, echo=FALSE}
+#plotting 25 gram bin histogram manually 
+ggplot(data=binfreq25, aes(x=bin25, y=freq25))+
+  geom_bar(stat="identity")
+```
+
+##(c) Explain, why non-random sorting across the treatment-threshold is a concern in RD designs. Make your arguments explicit ##and apply them to this particular example.
+
+It raises the concern that agents were manipulating the running variable, which creates selection problem, namely observations to the left from the cut-off are systematically different from those to the right. This breaks the assumption that aboservations close enougn to the cut-off are similar in all the characteristics.
+In this particular case, mothers who might know that the underweight children receive additional medical care, aksed to document the lower weight of a new-born baby than it actually was. This means that potentially more healthy (mature) babies got addtitional medical care and became even  healthier. This may overestimate the effect of the medical treatment for underweght babies.
+
+
+##(d) First, estimate the discontinuity using a regression that is linear in birth weights (LLR), allowing the slope to be ##different on each side of the cutoff.
+
+First, I estimated RDD for 1 gram bins and 150 gram bandwidth by hands, running manually two regressions to the left and to the right from the threshold and computing the difference in slopes (actually just out of curiosity, it's not required for the problem set).
+```{r, echo=FALSE}
+#RDD by hand
+binfreq_left = binfreq1 %>% 
+  filter(bwtcent < 0,
+         bwtcent>=-150)
+binfreq_right = binfreq1 %>% 
+  filter(bwtcent >= 0,
+         bwtcent<=150)
+
+lm_left = lm(n ~ bwtcent, binfreq_left)
+lm_right = lm(n ~ bwtcent, binfreq_right)
+
+intercept_left = lm_left$coefficients[1]
+intercept_right = lm_right$coefficients[1]
+difference = intercept_right - intercept_left
+
+print(str_c("The RD estimator is ", difference, "."))
+```
+
+Then, I used command #rdrobust to estimate what was needed.
+Results for 1 gram bin and 150 gram bandwidth:
+```{r}
+summary(rdrobust(binfreq1$n, binfreq1$bwtcent, kernel="uniform", p=1, h=150))
+rdplot(binfreq1$n, binfreq1$bwtcent,
+       p = 1, kernel = "uniform", h=150)
+```
+Results for 1 gram bin and 100 gram bandwidth:
+```{r}
+summary(rdrobust(binfreq1$n, binfreq1$bwtcent, kernel="uniform", p=1, h=100))
+rdplot(binfreq1$n, binfreq1$bwtcent,
+       p = 1, kernel = "uniform", h=100)
+```
+Results for 1 gram bin and 50 gram bandwidth:
+```{r}
+summary(rdrobust(binfreq1$n, binfreq1$bwtcent, kernel="uniform", p=1, h=50))
+rdplot(binfreq1$n, binfreq1$bwtcent,
+       p = 1, kernel = "uniform", h=50)
+```
+
+
+## (d),cont'd. Second, estimate the discontinuity using a weighted regression (LWR). In this part I also started with ##estimating regression for 1gram bins, 150 gram bandwidth by hands out of curiosity. In all cases i used triangular kernel ##for weightening scheme.
+```{r}
+#generating weights according to triangular kernel formula
+binfreq_left = binfreq1 %>% 
+  filter(bwtcent < 0,
+         bwtcent>=-150)
+w_left=NA
+w_left=1-abs(binfreq_left$bwtcent/150)
+
+binfreq_right = binfreq1 %>% 
+  filter(bwtcent >= 0,
+         bwtcent<=150)
+w_right=NA
+w_right=1-abs(binfreq_right$bwtcent/150)
+
+lwm_left = lm(n ~ bwtcent, binfreq_left, weights = w_left)
+lwm_right = lm(n ~ bwtcent, binfreq_right, weights = w_right)
+
+intercept_left = lwm_left$coefficients[1]
+intercept_right = lwm_right$coefficients[1]
+difference = intercept_right - intercept_left
+
+print(str_c("The RD estimator with LWR is ", difference, "."))
+```
+
+Then, I used command #rdrobust to estimate what was needed.
+Results for 1 gram bin and 150 gram bandwidth:
+```{r}
+summary(rdrobust(binfreq1$n, binfreq1$bwtcent, kernel="triangular", p=1, h=150))
+rdplot(binfreq1$n, binfreq1$bwtcent,
+       p = 1, kernel = "triangular", h=150)
+```
+Results for 1 gram bin and 100 gram bandwidth:
+```{r}
+summary(rdrobust(binfreq1$n, binfreq1$bwtcent, kernel="triangular", p=1, h=100))
+rdplot(binfreq1$n, binfreq1$bwtcent,
+       p = 1, kernel = "triangular", h=100)
+```
+Results for 1 gram bin and 50 gram bandwidth:
+```{r}
+summary(rdrobust(binfreq1$n, binfreq1$bwtcent, kernel="triangular", p=1, h=50))
+rdplot(binfreq1$n, binfreq1$bwtcent,
+       p = 1, kernel = "triangular", h=50)
+```
+
+## (d),cont'd. Third, Third, assume a 2nd order polynomial for each side of the cutoff (PR).
+
+Results for 1 gram bin and 150 gram bandwidth:
+```{r}
+summary(rdrobust(binfreq1$n, binfreq1$bwtcent, kernel="triangular", p=2, h=150))
+rdplot(binfreq1$n, binfreq1$bwtcent,
+       p = 2, kernel = "triangular", h=150)
+```
+Results for 1 gram bin and 100 gram bandwidth:
+```{r}
+summary(rdrobust(binfreq1$n, binfreq1$bwtcent, kernel="triangular", p=2, h=100))
+rdplot(binfreq1$n, binfreq1$bwtcent,
+       p = 2, kernel = "triangular", h=100)
+```
+Results for 1 gram bin and 50 gram bandwidth:
+```{r}
+summary(rdrobust(binfreq1$n, binfreq1$bwtcent, kernel="triangular", p=2, h=50))
+rdplot(binfreq1$n, binfreq1$bwtcent,
+       p = 2, kernel = "triangular", h=50)
+```
+
+Based on the obtained estimates it seems that the running variable is smooth across the threshold.
+
+
+##(e) Obtain RD estimates for discontinuities in whether the mother is white (constructed from mom race) and whether she has ##less than a high school education (mom ed1). Show your results in two tables, each table presenting estimates based on the ##following specifications (clustering standard errors on birth weights):
+
+```{r, echo=FALSE}
+#construction of the variable whether the mom is white (=1) other (=0)
+mom.white=NA
+mom.white <- ifelse(mydata$mom_race=="white", 1, 0)
+mydata <- mutate(mydata,mom.white)
+```
+
+With uniform (rectangular) kernel:
+```{r}
+#uniform kernel
+summary(rdrobust(mydata$mom.white, mydata$bwtcent, kernel="uniform", h=90, cluster=mydata$bwtcent))
+summary(rdrobust(mydata$mom.white, mydata$bwtcent, kernel="uniform", h=60, cluster=mydata$bwtcent))
+summary(rdrobust(mydata$mom.white, mydata$bwtcent, kernel="uniform", h=30, cluster=mydata$bwtcent))
+```
+
+With triangular kernel:
+```{r}
+summary(rdrobust(mydata$mom.white, mydata$bwtcent, kernel="uniform", h=90, cluster=mydata$bwtcent))
+summary(rdrobust(mydata$mom.white, mydata$bwtcent, kernel="uniform", h=60, cluster=mydata$bwtcent))
+summary(rdrobust(mydata$mom.white, mydata$bwtcent, kernel="uniform", h=30, cluster=mydata$bwtcent))
+```
+
+
+##(g) You will now estimate the eect of very low birth weight classication on one-year mortality (agedth5). Report your ##results from each of the following parts in a separate table (or in four columns of the same table). Estimate the effect of ##very low birth weight classiffcation on one-year mortality using the same specifications as those in part e., but use robust ##standard errors. Are the estimates sensitive to the bandwidth or weighting scheme? What happens to the standard error ##estimates if you cluster on grams instead? What does this suggest about the structure of the error terms?
+
+With uniform (rectangular) kernel and robust standard errors:
+```{r}
+#uniform kernel
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="uniform", h=90, vce="hc1"))
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="uniform", h=60, vce="hc1"))
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="uniform", h=30, vce="hc1"))
+```
+
+With uniform (rectangular) kernel and clustered standard errors:
+```{r}
+#uniform kernel
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="uniform", h=90, cluster=mydata$bwtcent))
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="uniform", h=60, cluster=mydata$bwtcent))
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="uniform", h=30, cluster=mydata$bwtcent))
+```
+
+With triangular kernel and robust standard errors:
+```{r}
+#uniform kernel
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="triangular", h=90, vce="hc1"))
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="triangular", h=60, vce="hc1"))
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="triangular", h=30, vce="hc1"))
+```
+
+With triangular kernel and clustered standard errors:
+```{r}
+#uniform kernel
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="triangular", h=90, cluster=mydata$bwtcent))
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="triangular", h=60, cluster=mydata$bwtcent))
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="triangular", h=30, cluster=mydata$bwtcent))
+```
+
+##(i) Which set of estimates are you most inclined to believe? Why? Depict the results for your main specification (and a ##bandwidth of 60 grams) graphically. What do you conclude about the eect of very low birth weight classification on infant ##mortality?
+```{r}
+summary(rdrobust(mydata$agedth5, mydata$bwtcent, kernel="triangular", h=60, cluster=mydata$bwtcent))
+rdplot(mydata$agedth5, mydata$bwtcent, kernel="triangular", h=60)
+```
+
+
+# 7.2. Application: Cultural Background and Fertility
+
+##(a) What is the treatment that is being analyzed by the authors? What else can be considered treatment
+##in this framework? What are the outcomes considered by the authors?
+
++ The treatment is mother's country of origin or immigration status, but i didn't quite get what kind of information this variable may content.
++ Also financial incentives to have children close to each other can be considered as a treatment in this framework. Then in this case paper would have been investigated the effect of financial incentives on the gap between children being born.
++ The outcome studied in the paper is the length of the gap between childern in families.
+
+##(b) The authors say that "Although previous research - the epidemiological approach to culture - has found
+##strong correlations between cultural traits and fertility choices, there is still an issue with unmeasured
+##immigrant characteristics". What could be these unmeasured immigrant characteristics? Why is it an
+##issue for identification?
+
+As far as I can guess from the setup, previous research studied the effect of cultural traits on fertility choices on the sample of people from different countries. However, the sample may constitute not only from locals, but also from immigrants. If it was not recorded during the data collection process it might have biased the results. For example, if we studied the fertility choices in Germany, but the sample contained significant portion of germans de jure, but de facto, turkish immigrants, we might actually end up with studying mix of germans and turkish people without knowing their proportions. This would be an issue for an identification.
+
+To generalize we can say that there are two sources for a self-selection, one is self-selection for immigration in another country and two is the self-selection into fertility decisions. Both of them confound identification strategy.
+
+##(c) Their approach (which they call diff-in-diff) consists in comparing the fertility pattern of immigrants
+##and Swedish natives before and after the introduction of the nation-wide reform. How does this
+##approach deal with the issue of unmeasured immigrant characteristics? What is the underlying assumption?
+
+The underlying assumption is that fertility pattern for immigrants and for natives are different though this difference is stable in time. In means that all unmeasured immigrant characteristics are already captured by the fertility patterns of immigrants. Strictly speaking it's a parallel trend assumption, which says that in an absence of policy intervention immigrants and natives have constant difference in measured outcome.
+The assumption is that in absence of differences in cultural background swedish natives and immigrants should react identically to the policy intervention. Absence of cultural differences the parallel trends will remain parallel after policy intervention, however, unobserved immigrants characteristics make the trends differ after a policy intervention. However, cultural things may change the reaction on policy intervention for immigrants in comparison with natives.
+
+##(d) The authors show that the pre-policy fertility choices (birth-spacing rates) for natives and immigrants
+are both flat and parallel, although at different levels. What conclusion can you draw about the internal
+and external validity of this study?
+
+It seems that the parallel trend assumption is fulfilled, thus the study is internally valid, which means that the identification is realiable enough for results to be trusted. However, the matter of external validity is questionable because the results got from this framework are valid only within specific circumstances (for swedish natives and immigrants to this country) but they may not be valid for other countries because of the underlying differences between countries and immigrants that come to different countries.
+
+## (e) What could be one concern with this identification strategy, if any? How could you test for it?
+The absense of covariates in the regression may concern identification startegy. There is nothing to test, just to add them and observe the results.
+Also other events that happen during the time period of study, like child-free movement (i'm not really sure when it started but something like this could be the case). If say child-free movement is the case, then fertility choices might have been affected and the parallel trend assumption didn't hold anymore. To test for it we may compare immigrants and locals for the same time-period in a neighboring country in Scandinavia (say Norway). If there parallel trend holds then it's more safe to rely on the current research design.
+
+
